@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import os
+import time
 from typing import Generator, List, Optional
 
 import jwt
@@ -10,6 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Field as SQLField, Session, SQLModel, create_engine, select
 
 DEFAULT_DATABASE_URL = "sqlite:///./account.db"
@@ -26,6 +28,21 @@ DEFAULT_ADMIN_ROLE = os.getenv("DEFAULT_ADMIN_ROLE", "manager")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {})
+
+
+def wait_for_db(max_attempts: int = 10, delay_seconds: float = 1.0) -> None:
+    """Block until the backing database accepts connections."""
+
+    last_exc: Optional[OperationalError] = None
+    for _attempt in range(1, max_attempts + 1):
+        try:
+            with engine.connect():
+                return
+        except OperationalError as exc:  # pragma: no cover - depends on external DB readiness
+            last_exc = exc
+            time.sleep(delay_seconds)
+    if last_exc is not None:
+        raise last_exc
 
 
 class User(SQLModel, table=True):
@@ -79,6 +96,7 @@ class UserRead(BaseModel):
 
 
 def init_db() -> None:
+    wait_for_db()
     SQLModel.metadata.create_all(engine)
 
 

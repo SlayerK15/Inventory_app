@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import os
+import time
 from typing import Generator, List, Optional
 
 import httpx
@@ -10,6 +11,7 @@ import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Field as SQLField, Session, SQLModel, create_engine, select
 
 DEFAULT_DATABASE_URL = "sqlite:///./inventory.db"
@@ -21,6 +23,21 @@ NOTIFIER_SERVICE_URL = os.getenv("NOTIFIER_SERVICE_URL", "http://notifier:8000")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "service-token")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {})
+
+
+def wait_for_db(max_attempts: int = 10, delay_seconds: float = 1.0) -> None:
+    """Block until the backing database is ready to accept connections."""
+
+    last_exc: Optional[OperationalError] = None
+    for _attempt in range(1, max_attempts + 1):
+        try:
+            with engine.connect():
+                return
+        except OperationalError as exc:  # pragma: no cover - depends on external DB readiness
+            last_exc = exc
+            time.sleep(delay_seconds)
+    if last_exc is not None:
+        raise last_exc
 
 
 class InventoryItem(SQLModel, table=True):
@@ -78,6 +95,7 @@ class DashboardSummary(BaseModel):
 
 
 def init_db() -> None:
+    wait_for_db()
     SQLModel.metadata.create_all(engine)
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import os
+import time
 from typing import Any, Dict, Generator, List, Optional
 
 import jwt
@@ -10,6 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import Column
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.types import JSON
 from sqlmodel import Field as SQLField, Session, SQLModel, create_engine, select
 
@@ -22,10 +24,29 @@ SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "service-token")
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {})
 
 
+def wait_for_db(max_attempts: int = 10, delay_seconds: float = 1.0) -> None:
+    """Ensure the database is reachable before running migrations."""
+
+    last_exc: Optional[OperationalError] = None
+    for _attempt in range(1, max_attempts + 1):
+        try:
+            with engine.connect():
+                return
+        except OperationalError as exc:  # pragma: no cover - depends on external DB readiness
+            last_exc = exc
+            time.sleep(delay_seconds)
+    if last_exc is not None:
+        raise last_exc
+
+
 class AuditLog(SQLModel, table=True):
     id: Optional[int] = SQLField(default=None, primary_key=True)
     actor_id: Optional[int] = SQLField(default=None, index=True)
     message: str
+    details: Dict[str, Any] = SQLField(
+        default_factory=dict,
+        sa_column=Column("metadata", JSON, nullable=False),
+    )
     metadata: Dict[str, Any] = SQLField(default_factory=dict, sa_column=Column(JSON, nullable=False))
     created_at: datetime = SQLField(default_factory=datetime.utcnow, nullable=False)
 
@@ -47,6 +68,7 @@ class AuditLogRead(BaseModel):
 
 
 def init_db() -> None:
+    wait_for_db()
     SQLModel.metadata.create_all(engine)
 
 
@@ -108,6 +130,11 @@ def create_log(
     if service_token != SERVICE_TOKEN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid service token")
     actor_id = resolve_subject(token)
+    log_entry = AuditLog(actor_id=actor_id, message=payload.message, details=payload.metadata)
+    session.add(log_entry)
+    session.commit()
+    session.refresh(log_entry)
+    return serialize_log(log_entry)
     log_entry = AuditLog(actor_id=actor_id, message=payload.message, metadata=payload.metadata)
     session.add(log_entry)
     session.commit()
@@ -119,4 +146,15 @@ def create_log(
 def list_logs(token: str = Depends(extract_token), session: Session = Depends(get_session)) -> List[AuditLogRead]:
     resolve_subject(token)
     logs = session.exec(select(AuditLog).order_by(AuditLog.created_at.desc())).all()
+    return [serialize_log(log) for log in logs]
+
+
+def serialize_log(entry: AuditLog) -> AuditLogRead:
+    return AuditLogRead(
+        id=entry.id or 0,
+        actor_id=entry.actor_id,
+        message=entry.message,
+        metadata=entry.details,
+        created_at=entry.created_at,
+    )
     return [AuditLogRead.from_orm(log) for log in logs]
