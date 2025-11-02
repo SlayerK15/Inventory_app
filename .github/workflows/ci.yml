@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+jobs:
+  build-services:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [gateway, account, inventory, log, notifier]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r services/${{ matrix.service }}/requirements.txt
+      - name: Lint (ruff placeholder)
+        run: |
+          echo "TODO: add ruff / mypy" 
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: |
+          cd web/dashboard
+          npm install
+      - name: Lint web
+        run: |
+          cd web/dashboard
+          npm run lint
