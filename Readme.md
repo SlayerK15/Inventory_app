@@ -41,6 +41,17 @@ The compose stack seeds a manager account:
 
 Use these credentials to sign in on the web dashboard or Android app.
 
+### Running API tests locally
+
+For quick verification of the core authentication and inventory workflows without Docker, install the dev dependencies and run the pytest suite:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The tests exercise the FastAPI applications directly against temporary SQLite databases while stubbing downstream HTTP fan-out calls, so they run quickly in fully offline environments.
+
 ### Environment variables
 
 Each service reads settings from environment variables (defaults shown for local dev):
