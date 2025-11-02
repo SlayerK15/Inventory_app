@@ -47,6 +47,7 @@ class AuditLog(SQLModel, table=True):
         default_factory=dict,
         sa_column=Column("metadata", JSON, nullable=False),
     )
+    metadata: Dict[str, Any] = SQLField(default_factory=dict, sa_column=Column(JSON, nullable=False))
     created_at: datetime = SQLField(default_factory=datetime.utcnow, nullable=False)
 
 
@@ -134,6 +135,11 @@ def create_log(
     session.commit()
     session.refresh(log_entry)
     return serialize_log(log_entry)
+    log_entry = AuditLog(actor_id=actor_id, message=payload.message, metadata=payload.metadata)
+    session.add(log_entry)
+    session.commit()
+    session.refresh(log_entry)
+    return AuditLogRead.from_orm(log_entry)
 
 
 @app.get("/logs", response_model=List[AuditLogRead], tags=["logs"])
@@ -151,3 +157,4 @@ def serialize_log(entry: AuditLog) -> AuditLogRead:
         metadata=entry.details,
         created_at=entry.created_at,
     )
+    return [AuditLogRead.from_orm(log) for log in logs]
