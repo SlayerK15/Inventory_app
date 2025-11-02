@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.env
+.terraform/
+terraform.tfstate*
+*.tfvars
+.idea/
+.vscode/
+.DS_Store
+node_modules/
+web/dashboard/.next/
+web/dashboard/out/
+android/.gradle/
+android/app/build/
