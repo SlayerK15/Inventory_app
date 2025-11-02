@@ -1,0 +1,92 @@
+version: "3.9"
+
+services:
+  account:
+    build: ./services/account
+    environment:
+      - PORT=8000
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@postgres:5432/inventory
+      - SECRET_KEY=super-secret-key
+      - DEFAULT_ADMIN_EMAIL=staff@example.com
+      - DEFAULT_ADMIN_PASSWORD=password123
+      - DEFAULT_ADMIN_NAME=Operations Manager
+      - DEFAULT_ADMIN_ROLE=manager
+    ports:
+      - "8001:8000"
+    depends_on:
+      - postgres
+  inventory:
+    build: ./services/inventory
+    environment:
+      - PORT=8000
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@postgres:5432/inventory
+      - SECRET_KEY=super-secret-key
+      - LOG_SERVICE_URL=http://log:8000
+      - NOTIFIER_SERVICE_URL=http://notifier:8000
+      - SERVICE_TOKEN=inventory-internal-token
+    ports:
+      - "8002:8000"
+    depends_on:
+      - postgres
+      - log
+      - notifier
+  log:
+    build: ./services/log
+    environment:
+      - PORT=8000
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@postgres:5432/inventory
+      - SECRET_KEY=super-secret-key
+      - SERVICE_TOKEN=inventory-internal-token
+    ports:
+      - "8003:8000"
+    depends_on:
+      - postgres
+  notifier:
+    build: ./services/notifier
+    environment:
+      - PORT=8000
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@postgres:5432/inventory
+      - SECRET_KEY=super-secret-key
+      - SERVICE_TOKEN=inventory-internal-token
+    ports:
+      - "8004:8000"
+    depends_on:
+      - postgres
+  gateway:
+    build: ./services/gateway
+    environment:
+      - GATEWAY_ACCOUNT_SERVICE_URL=http://account:8000
+      - GATEWAY_INVENTORY_SERVICE_URL=http://inventory:8000
+      - GATEWAY_LOG_SERVICE_URL=http://log:8000
+      - GATEWAY_NOTIFIER_SERVICE_URL=http://notifier:8000
+      - SERVICE_TOKEN=inventory-internal-token
+    depends_on:
+      - account
+      - inventory
+      - log
+      - notifier
+    ports:
+      - "8080:8000"
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: inventory
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  dynamodb:
+    image: amazon/dynamodb-local:2.0.0
+    command: -jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal
+    ports:
+      - "8000:8000"
+    volumes:
+      - dynamodb:/home/dynamodblocal
+
+volumes:
+  pgdata:
+  dynamodb:

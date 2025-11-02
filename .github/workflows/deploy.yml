@@ -1,0 +1,42 @@
+name: Deploy
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ap-south-1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Build and push gateway image
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          ./scripts/build_push.sh services/gateway gateway:${GITHUB_SHA::7}
+      - name: Terraform apply (dev)
+        run: |
+          cd infra/terraform/envs/dev
+          terraform init -upgrade
+          terraform apply -auto-approve \
+            -var="gateway_image=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/gateway:${GITHUB_SHA::7}" \
+            -var="execution_role_arn=${{ secrets.ECS_EXECUTION_ROLE_ARN }}" \
+            -var="task_role_arn=${{ secrets.ECS_TASK_ROLE_ARN }}" \
+            -var="db_password=${{ secrets.DB_PASSWORD }}"
